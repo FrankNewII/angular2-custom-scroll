@@ -2,8 +2,8 @@ import {AfterViewInit, Component, EventEmitter, Output, ViewChild} from "@angula
 
 @Component({
     selector: 'scroll-component',
-    templateUrl: './scroller.html',
-    styleUrls: ['./scroller.scss']
+    templateUrl: 'scroller.html',
+    styleUrls: ['scroller.scss']
 })
 
 export class ScrollComponent implements AfterViewInit {
