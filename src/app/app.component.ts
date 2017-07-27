@@ -23,13 +23,16 @@ import {Component, ViewEncapsulation} from '@angular/core';
         }
         .container {
             display: block;
+            width: 90%;
             height: 400px;
         }
         
         .container .item {
             height: 200px;
             line-height: 200px;
+            width: 1500px;
             text-align: center;
+            font-size: 36px;
         }
     `],
 

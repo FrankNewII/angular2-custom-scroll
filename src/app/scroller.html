@@ -15,5 +15,5 @@
 <div class="scroll scroll-x" [class.active]="isShowedScrollX">
     <div class="indicator indicator-x" #indicatorX></div>
 </div>
-<div class="square" [hidden]="!isShowedScrollX && !isShowedScrollY"></div>
+<div class="square" *ngIf="isShowedScrollX && isShowedScrollY"></div>
 <div class="clear"></div>
