@@ -19,15 +19,18 @@ import {Component, ViewEncapsulation} from '@angular/core';
         body {
             margin: 0;
             padding: 0;
-            font-size: 14px;;
+            font-size: 80px;
         }
         .container {
             display: block;
             height: 400px;
+            width: 400px;
         }
         
         .container .item {
             height: 200px;
+            width: 600px;
+            background-color: red;
             line-height: 200px;
             text-align: center;
         }

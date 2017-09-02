@@ -1,4 +1,4 @@
-import {AfterViewInit, Component, EventEmitter, Output, ViewChild} from "@angular/core";
+import {AfterViewInit, Component, EventEmitter, Input, OnDestroy, Output, ViewChild} from '@angular/core';
 
 @Component({
     selector: 'scroll-component',
@@ -6,7 +6,9 @@ import {AfterViewInit, Component, EventEmitter, Output, ViewChild} from "@angula
     styleUrls: ['./scroller.scss']
 })
 
-export class ScrollComponent implements AfterViewInit {
+export class ScrollComponent implements AfterViewInit, OnDestroy {
+
+    public stopMouseCheck = false;
     @Output() private heightScrollAtStart = new EventEmitter();
     @Output() private heightScrollAtEnd = new EventEmitter();
 
@@ -19,26 +21,37 @@ export class ScrollComponent implements AfterViewInit {
     @Output() private showHeightScroll = new EventEmitter();
     @Output() private hideHeightScroll = new EventEmitter();
 
+    /*
+     * That very expensive operation and in very large component its can be disabled
+     * and all updating of scroll will be making by calling method {@link updateScrollState}
+     * */
+
+    @Input() private disableReInitScrollOnDOMMutation = false;
+
     @ViewChild('indicatorY') private indicatorY;
     @ViewChild('indicatorX') private indicatorX;
     @ViewChild('content') private content;
     @ViewChild('overlay') private overlay;
+    @ViewChild('mainContent') private mainContent;
 
-    private domMutationTimer: number;
-
-    private _isIndicatorScrollPressed = false;
-
-    private _isShowedScrollY = false;
-    private _isShowedScrollX = false;
+    private scrollStateTimer: any;
 
     private currentPressedScrollIndicator: any;
 
     private startMousePosition: number;
-
     private scrollTimer;
 
+    /*
+     * Properties for prevent double emit events:
+     * lastLeftPosition - widthScrollAtStart/widthScrollAtEnd
+     * lastTopPosition - heightScrollAtStart/heightScrollAtEnd
+     * */
 
-    public get isShowedScrollY() {
+    private lastLeftPosition = 0;
+    private lastTopPosition = 0;
+
+    private _isShowedScrollY = false;
+    public get isShowedScrollY(): boolean {
         return this._isShowedScrollY;
     }
 
@@ -55,11 +68,12 @@ export class ScrollComponent implements AfterViewInit {
         this._isShowedScrollY = v;
     }
 
-    public get isShowedScrollX() {
+    private _isShowedScrollX = false;
+    public get isShowedScrollX(): boolean {
         return this._isShowedScrollX;
     }
 
-    public set isShowedScrollX(v) {
+    public set isShowedScrollX(v: boolean) {
 
         if (this._isShowedScrollX !== v) {
             if (v) {
@@ -72,7 +86,8 @@ export class ScrollComponent implements AfterViewInit {
         this._isShowedScrollX = v;
     }
 
-    public get isIndicatorScrollPressed() {
+    private _isIndicatorScrollPressed = false;
+    public get isIndicatorScrollPressed(): boolean {
         return this._isIndicatorScrollPressed;
     }
 
@@ -89,156 +104,189 @@ export class ScrollComponent implements AfterViewInit {
         this._isIndicatorScrollPressed = v;
     }
 
+    public ngOnDestroy(): void {
+        window.removeEventListener('resize', this.calcScrollState);
+
+        if (!this.disableReInitScrollOnDOMMutation) {
+            this.content.nativeElement.removeEventListener('DOMNodeInserted', this.calcScrollState);
+        }
+
+        this.content.nativeElement.removeEventListener('scroll', this.scrollHandler);
+        this.indicatorY.nativeElement.removeEventListener('mousedown', this.mousedownHandlerY);
+        this.indicatorX.nativeElement.removeEventListener('mousedown', this.mousedownHandlerX);
+        this.overlay.nativeElement.removeEventListener('mouseup', this.mouseupHandler);
+        this.overlay.nativeElement.removeEventListener('mousemove', this.mousemoveHandler);
+        this.overlay.nativeElement.removeEventListener('mousemove', this.mousemoveHandlerX);
+    }
+
     public ngAfterViewInit(): void {
-        this.content.nativeElement.addEventListener('scroll', this.scrollHandler.bind(this));
-        this.content.nativeElement.addEventListener('DOMNodeInserted', this.domMutation);
+        window.addEventListener('resize', this.calcScrollState);
+        var self = this;
+        var observer = new MutationObserver((mutations, observer) => {
+            mutations.some((item) => {
+                if (item.target !== this.indicatorY.nativeElement && item.target !== this.indicatorX.nativeElement) {
+                    self.calcScrollState();
+                    return true;
+                }
+            });
+        });
+        if (!this.disableReInitScrollOnDOMMutation) {
+            this.content.nativeElement.addEventListener('DOMNodeInserted', this.calcScrollState);
+        }
+        observer.observe(this.mainContent.nativeElement, {
+            attributes: false,
+            childList: true,
+            subtree: true,
+            characterData: false
+        });
+        this.content.nativeElement.addEventListener('scroll', this.scrollHandler);
         this.indicatorY.nativeElement.addEventListener('mousedown', this.mousedownHandlerY);
         this.indicatorX.nativeElement.addEventListener('mousedown', this.mousedownHandlerX);
 
-        setTimeout(() => {
-            let calcIndicatorSizeY = this.calcIndicatorSizeY();
-            let calcIndicatorSizeX = this.calcIndicatorSizeX();
-
-            if (calcIndicatorSizeY !== this.content.nativeElement.clientHeight) {
-                this.isShowedScrollY = true;
-                this.indicatorY.nativeElement.style.height = calcIndicatorSizeY + "px";
-                this.indicatorY.nativeElement.style.top = this.calcIndicatorTopPosition() + "px";
-            }
-
-            if (calcIndicatorSizeX !== this.content.nativeElement.clientWidth) {
-                this.isShowedScrollX = true;
-                this.indicatorX.nativeElement.style.width = calcIndicatorSizeX + "px";
-                this.indicatorX.nativeElement.style.left = this.calcIndicatorLeftPosition() + "px";
-            }
-        });
+        this.calcScrollState();
     }
 
     public resetScroll(): void {
-        this.indicatorY.nativeElement.style.top = "0px";
+        this.indicatorY.nativeElement.style.top = '0px';
         this.content.nativeElement.scrollTop = 0;
     }
 
-    private mousedownHandlerY = (e: MouseEvent) => {
-
+    private mousedownHandlerY = (e: MouseEvent): void => {
+        e.stopPropagation();
+        const top = this.indicatorY.nativeElement.style.top.slice(0, -2) || '0';
         this.currentPressedScrollIndicator = e.target;
         this.currentPressedScrollIndicator.classList.add('active');
-        this.isIndicatorScrollPressed = true;
-
-        this.startMousePosition = e.clientY - (parseInt(this.indicatorY.nativeElement.style.top.slice(0, -2) || "0"));
+        this.startMousePosition = e.clientY - (parseInt(top, 10));
         this.overlay.nativeElement.addEventListener('mouseup', this.mouseupHandler);
         this.overlay.nativeElement.addEventListener('mouseleave', this.mouseleaveHandler);
         this.overlay.nativeElement.addEventListener('mousemove', this.mousemoveHandler);
+        this.isIndicatorScrollPressed = true;
     };
 
-    private mousedownHandlerX = (e: MouseEvent) => {
-
+    private mousedownHandlerX = (e: MouseEvent): void => {
+        e.stopPropagation();
+        const left = this.indicatorX.nativeElement.style.left.slice(0, -2) || '0';
         this.currentPressedScrollIndicator = e.target;
         this.currentPressedScrollIndicator.classList.add('active');
-        this.isIndicatorScrollPressed = true;
-
-        this.startMousePosition = e.clientX - (parseInt(this.indicatorX.nativeElement.style.left.slice(0, -2) || "0"));
+        this.startMousePosition = e.clientX - (parseInt(left, 10));
         this.overlay.nativeElement.addEventListener('mouseup', this.mouseupHandler);
         this.overlay.nativeElement.addEventListener('mouseleave', this.mouseleaveHandler);
         this.overlay.nativeElement.addEventListener('mousemove', this.mousemoveHandlerX);
+        this.isIndicatorScrollPressed = true;
     };
 
-
-    private mouseupHandler = () => {
+    private mouseupHandler = (e: Event): void => {
+        e.stopPropagation();
         this.isIndicatorScrollPressed = false;
     };
 
-    private mouseleaveHandler = () => {
+    private mouseleaveHandler = (e: Event): void => {
+        e.stopPropagation();
         this.isIndicatorScrollPressed = false;
     };
 
-    private mousemoveHandler = (e) => {
-        let contentHeight = this.content.nativeElement.clientHeight;
-        let iHeight = this.indicatorY.nativeElement.style.height;
-        let newPosition = (e.clientY - this.startMousePosition) * ( contentHeight / iHeight.slice(0, -2) );
+    private mousemoveHandler = (e): void => {
+        const contentHeight = this.content.nativeElement.clientHeight;
+        const iHeight = this.indicatorY.nativeElement.style.height;
 
-        this.content.nativeElement.scrollTop = newPosition;
+        this.content.nativeElement.scrollTop = (e.clientY - this.startMousePosition) * ( contentHeight / iHeight.slice(0, -2) );
     };
 
-    private mousemoveHandlerX = (e) => {
-        let contentWidth = this.content.nativeElement.clientWidth;
-        let iWidth = this.indicatorX.nativeElement.style.width;
-        let newPosition = (e.clientX - this.startMousePosition) * ( contentWidth / iWidth.slice(0, -2) );
+    private mousemoveHandlerX = (e): void => {
+        const contentWidth = this.content.nativeElement.clientWidth;
+        const iWidth = this.indicatorX.nativeElement.style.width;
 
-        this.content.nativeElement.scrollLeft = newPosition;
+        this.content.nativeElement.scrollLeft = (e.clientX - this.startMousePosition) * ( contentWidth / iWidth.slice(0, -2) );
     };
 
-    private scrollHandler(): void {
-        let height = parseInt(this.indicatorY.nativeElement.style.height.slice(0, -2));
-        let width = parseInt(this.indicatorX.nativeElement.style.width.slice(0, -2));
+    private scrollHandler = (e: Event): void => {
+        e.stopPropagation();
+        this.stopMouseCheck = true;
 
-        let top = this.calcIndicatorTopPosition();
-        let left = this.calcIndicatorLeftPosition();
+        if (this.isShowedScrollY) {
+            const top = this.calcIndicatorTopPosition();
+            const height = parseInt(this.indicatorY.nativeElement.style.height.slice(0, -2), 10);
+            const contentHeight = this.content.nativeElement.clientHeight;
 
-        let contentWidth = this.content.nativeElement.clientWidth;
-        let contentHeight = this.content.nativeElement.clientHeight;
+            this.indicatorY.nativeElement.style.top = top + 'px';
 
-        this.indicatorX.nativeElement.style.left = left + "px";
+            if (top === 0 && this.lastTopPosition !== top) {
+                this.heightScrollAtStart.emit();
+            } else if (Math.ceil(height + top) >= Math.round(contentHeight) && this.lastTopPosition !== Math.ceil(height + top)) {
+                this.heightScrollAtEnd.emit();
+            }
 
-        this.indicatorY.nativeElement.style.top = top + "px";
-
-        if (top === 0) {
-            this.heightScrollAtStart.emit();
+            this.lastTopPosition = Math.ceil(height + top);
         }
 
-        if (height + top === contentHeight) {
-            this.heightScrollAtEnd.emit();
+        if (this.isShowedScrollX) {
+            const left = this.calcIndicatorLeftPosition();
+            const width = parseInt(this.indicatorX.nativeElement.style.width.slice(0, -2), 10);
+            const contentWidth = this.content.nativeElement.clientWidth;
+
+            this.indicatorX.nativeElement.style.left = left + 'px';
+            if (left === 0 && this.lastLeftPosition !== left) {
+                this.widthScrollAtStart.emit();
+            } else if (Math.ceil(width + left) >= contentWidth && this.lastLeftPosition !== Math.ceil(width + left)) {
+                this.widthScrollAtEnd.emit();
+            }
+
+            this.lastLeftPosition = Math.ceil(width + left);
         }
 
-
-        if (left === 0) {
-            this.widthScrollAtStart.emit();
+        if (this.scrollTimer) {
+            clearTimeout(this.scrollTimer);
         }
 
-        if (width + left === contentWidth) {
-            this.widthScrollAtEnd.emit();
+        this.scrollTimer = setTimeout(() => {
+            this.stopMouseCheck = false;
+        }, 300);
+    };
+
+    private calcScrollState = (): void => {
+        if (this.scrollStateTimer) {
+            clearTimeout(this.scrollStateTimer);
         }
 
-        this.scrollTimer = null;
-    }
-
-    private domMutation = () => {
-        if (this.domMutationTimer) clearTimeout(this.domMutationTimer);
-
-        this.domMutationTimer = setTimeout(() => {
-            let calcIndicatorSizeY = this.calcIndicatorSizeY();
-            let calcIndicatorSizeX = this.calcIndicatorSizeX();
+        this.scrollStateTimer = setTimeout(() => {
+            const calcIndicatorSizeY = this.calcIndicatorSizeY();
+            const calcIndicatorSizeX = this.calcIndicatorSizeX();
 
             if (calcIndicatorSizeY !== this.content.nativeElement.clientHeight) {
                 this.isShowedScrollY = true;
-                this.indicatorY.nativeElement.style.height = calcIndicatorSizeY + "px";
-                this.indicatorY.nativeElement.style.top = this.calcIndicatorTopPosition() + "px";
+                this.indicatorY.nativeElement.style.height = calcIndicatorSizeY + 'px';
+                this.indicatorY.nativeElement.style.top = this.calcIndicatorTopPosition() + 'px';
             } else {
                 this.isShowedScrollY = false;
             }
 
             if (calcIndicatorSizeX !== this.content.nativeElement.clientWidth) {
                 this.isShowedScrollX = true;
-                this.indicatorX.nativeElement.style.width = calcIndicatorSizeX + "px";
-                this.indicatorX.nativeElement.style.left = this.calcIndicatorLeftPosition() + "px";
+                this.indicatorX.nativeElement.style.width = calcIndicatorSizeX + 'px';
+                this.indicatorX.nativeElement.style.left = this.calcIndicatorLeftPosition() + 'px';
             } else {
                 this.isShowedScrollX = false;
             }
-        }, 100);
+        }, 500);
     };
 
     private calcIndicatorSizeY(): number {
-        return this.content.nativeElement.clientHeight / (this.content.nativeElement.scrollHeight / this.content.nativeElement.clientHeight);
+        return this.content.nativeElement.clientHeight /
+            (this.content.nativeElement.scrollHeight / this.content.nativeElement.clientHeight) - (!this.isShowedScrollY && 30 || 0);
     }
 
     private calcIndicatorSizeX(): number {
-        return this.content.nativeElement.clientWidth / (this.content.nativeElement.scrollWidth / this.content.nativeElement.clientWidth);
+        return this.content.nativeElement.clientWidth /
+            (this.content.nativeElement.scrollWidth / this.content.nativeElement.clientWidth) - (!this.isShowedScrollX && 30 || 0);
     }
 
     private calcIndicatorTopPosition(): number {
-        return this.content.nativeElement.clientHeight / (this.content.nativeElement.scrollHeight / this.content.nativeElement.scrollTop);
+        return this.content.nativeElement.clientHeight /
+            (this.content.nativeElement.scrollHeight / this.content.nativeElement.scrollTop);
     }
 
     private calcIndicatorLeftPosition(): number {
-        return this.content.nativeElement.clientWidth / (this.content.nativeElement.scrollWidth / this.content.nativeElement.scrollLeft);
+        return this.content.nativeElement.clientWidth /
+            (this.content.nativeElement.scrollWidth / this.content.nativeElement.scrollLeft);
     }
 }

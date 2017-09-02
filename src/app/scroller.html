@@ -1,10 +1,11 @@
 <div class="overlay" #overlay [class.active]="isIndicatorScrollPressed"></div>
 <div
-        class="native-scroll-hidder"
-        [class.height-scroll-active]="isShowedScrollY"
-        [class.width-scroll-active]="isShowedScrollX">
+        class="native-scroll-hidder">
     <div #content class="scrolled-content">
-        <ng-content></ng-content>
+        <div class="main-content"
+             [class.stop-mouse-check]="stopMouseCheck" #mainContent>
+            <ng-content></ng-content>
+        </div>
     </div>
 </div>
 
@@ -15,5 +16,4 @@
 <div class="scroll scroll-x" [class.active]="isShowedScrollX">
     <div class="indicator indicator-x" #indicatorX></div>
 </div>
-<div class="square" [hidden]="!isShowedScrollX && !isShowedScrollY"></div>
 <div class="clear"></div>

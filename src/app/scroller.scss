@@ -3,50 +3,21 @@
   position: relative;
   height: 100%;
   width: 100%;
-  margin-right: -20px;
   overflow: hidden;
 
   .overlay {
     user-select: none;
     cursor: move;
-    display: none;
-
-    .active {
-      display: block;
-      position: fixed;
-      width: 100%;
-      height: 100%;
-    }
-
-  }
-
-  .square {
-    position: relative;
-    width: 20px;
-    height: 20px;
-    float: right;
-    bottom: 36px;
-    background-color: white;
-    border: 1px solid #d5d5d5;
-    z-index: 2;
   }
 
   .native-scroll-hidder {
     /*
-      16px - is height of default scroll
-      20px - is height of custom scroll
+      16px - is height/width of default scroll
+      20px - is height/width of custom scroll
     */
     width: calc(100% + 16px);
     height: calc(100% + 16px);
     overflow: scroll;
-
-    &.height-scroll-active {
-      padding-right: 20px;
-    }
-
-    &.width-scroll-active {
-      padding-bottom: 20px;
-    }
 
     .scrolled-content {
       float: left;
@@ -55,15 +26,22 @@
       height: calc(100% + 16px);
       min-width: calc(100% - 16px);
       position: relative;
-      margin-bottom: -16px;
+
+      &::-webkit-scrollbar {
+        -webkit-appearance: none;
+      }
+
+      .main-content {
+        &.stop-mouse-check {
+          pointer-events: none !important;
+        }
+      }
     }
   }
 
   .scroll {
     position: absolute;
-    background-color: white;
     opacity: 0;
-    transition: opacity .2s;
     z-index: 1;
 
     &.active {
@@ -71,17 +49,17 @@
     }
 
     .indicator {
-      background-color: #00abee;
+      background-color: rgba( 0, 0, 0, .5);
       position: relative;
       cursor: pointer;
     }
 
     &.scroll-y {
-      border-left: 1px solid #d5d5d5;
       width: 0;
       height: 100%;
       right: 0;
       top: 0;
+      z-index: 2;
 
       &.active {
         width: 20px;
@@ -104,13 +82,12 @@
     }
 
     &.scroll-x {
-      border-top: 1px solid #d5d5d5;
-      border-bottom: 1px solid #d5d5d5;
-      width: calc(100% - 20px);
+      width: 100%;
       line-height: 20px;
       left: 0;
       height: 0;
       bottom: 0;
+      z-index: 1;
 
       &.active {
         height: 20px;
@@ -119,8 +96,8 @@
       .indicator {
         display: inline-block;
         vertical-align: middle;
-        margin-top: -3px;
-        height: 7px;
+        margin-top: -6px;
+        height: 8px;
         width: 100%;
         transition: height .1s;
 
